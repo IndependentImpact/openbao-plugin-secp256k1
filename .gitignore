@@ -1,0 +1,3 @@
+bin/
+openbao-plugin-secp256k1
+*.test

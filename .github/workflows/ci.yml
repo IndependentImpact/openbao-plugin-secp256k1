@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build (linux/amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '-s -w' -o bin/openbao-plugin-secp256k1_linux_amd64 ./cmd
+      - name: Build (linux/arm64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '-s -w' -o bin/openbao-plugin-secp256k1_linux_arm64 ./cmd
+      - name: Checksums
+        run: cd bin && sha256sum * > checksums.txt && cat checksums.txt
