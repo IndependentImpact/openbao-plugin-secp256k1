@@ -45,7 +45,7 @@ jobs:
           go-version-file: go.mod
       - name: Install OpenBao ${{ env.OPENBAO_VERSION }}
         run: |
-          curl -fsSLo bao.deb "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_linux_amd64.deb"
+          curl -fsSLo bao.deb "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/openbao_${OPENBAO_VERSION}_linux_amd64.deb"
           sudo dpkg -i bao.deb
           bao --version
       - run: ./scripts/integration-openbao.sh
