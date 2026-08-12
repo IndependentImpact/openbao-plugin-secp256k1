@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ import (
 func getTestBackend(t *testing.T) (logical.Backend, logical.Storage) {
 	t.Helper()
 	config := logical.TestBackendConfig()
-	config.StorageView = &logical.InmemStorage{}
+	config.StorageView = copyingStorage{under: &logical.InmemStorage{}}
 	b, err := Factory(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +222,9 @@ func TestCreateDeleteSemantics(t *testing.T) {
 
 // TestNoPrivateMaterialExposed asserts the structural non-exportability the
 // specs rely on: no export/backup-like path exists, and no response leaks
-// private key bytes.
+// private key bytes. Per SEC-005, whole responses are serialized and scanned
+// — nested maps included — for the scalar in hex and base64 form, across
+// create, read, rotate, config, sign, and error responses.
 func TestNoPrivateMaterialExposed(t *testing.T) {
 	b, s := getTestBackend(t)
 	forbidden := regexp.MustCompile(`export|backup|restore|private`)
@@ -231,24 +234,50 @@ func TestNoPrivateMaterialExposed(t *testing.T) {
 		}
 	}
 
-	mustCreateKey(t, b, s, "k")
-	raw, err := s.Get(context.Background(), "keys/k")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var entry keyEntry
-	if err := raw.DecodeJSON(&entry); err != nil {
-		t.Fatal(err)
-	}
-	privHex := hex.EncodeToString(entry.Versions[1].PrivateKey)
+	created := mustCreateKey(t, b, s, "k")
 
-	read := doRequest(t, b, s, logical.ReadOperation, "keys/k", nil)
-	sign := signDigest(t, b, s, "k", testDigest(9), nil)
-	for _, resp := range []*logical.Response{read, sign} {
-		for k, v := range resp.Data {
-			if sv, ok := v.(string); ok && strings.Contains(strings.ToLower(sv), privHex) {
-				t.Errorf("response field %q contains private key material", k)
+	scalars := func() [][]byte {
+		raw, err := s.Get(context.Background(), "keys/k")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entry keyEntry
+		if err := raw.DecodeJSON(&entry); err != nil {
+			t.Fatal(err)
+		}
+		out := make([][]byte, 0, len(entry.Versions))
+		for _, kv := range entry.Versions {
+			out = append(out, kv.PrivateKey)
+		}
+		return out
+	}
+
+	assertClean := func(label string, resp *logical.Response) {
+		t.Helper()
+		if resp == nil {
+			return
+		}
+		serialized, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		haystack := strings.ToLower(string(serialized))
+		for _, scalar := range scalars() {
+			for form, needle := range map[string]string{
+				"hex":    hex.EncodeToString(scalar),
+				"base64": base64.StdEncoding.EncodeToString(scalar),
+			} {
+				if strings.Contains(haystack, strings.ToLower(needle)) {
+					t.Errorf("%s response contains private scalar (%s form)", label, form)
+				}
 			}
 		}
 	}
+
+	assertClean("create", created)
+	assertClean("read", doRequest(t, b, s, logical.ReadOperation, "keys/k", nil))
+	assertClean("rotate", doRequest(t, b, s, logical.UpdateOperation, "keys/k/rotate", nil))
+	assertClean("config", doRequest(t, b, s, logical.UpdateOperation, "keys/k/config", map[string]any{"deletion_allowed": false}))
+	assertClean("sign", signDigest(t, b, s, "k", testDigest(9), nil))
+	assertClean("error", signDigest(t, b, s, "k", testDigest(9), map[string]any{"key_version": 99}))
 }

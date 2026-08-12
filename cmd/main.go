@@ -5,8 +5,8 @@ package main
 import (
 	"os"
 
-	hclog "github.com/hashicorp/go-hclog"
 	secp256k1signer "github.com/IndependentImpact/openbao-plugin-secp256k1"
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/api/v2"
 	"github.com/openbao/openbao/sdk/v2/plugin"
 )
