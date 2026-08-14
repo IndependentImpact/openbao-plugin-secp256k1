@@ -34,7 +34,7 @@ Checks performed:
 - `go test -race ./...`, `go vet ./...`, `go build ./...`, `go mod verify`,
   and `govulncheck ./...`.
 - Local OpenBao 2.6.1 plugin registration, mount, key creation, signing,
-  public-key read, and an `export/bounty` negative probe. The probe returned
+  public-key read, and an `export/test-key` negative probe. The probe returned
   `unsupported path`.
 
 The temporary local OpenBao server was stopped after testing. No pre-existing
@@ -47,7 +47,7 @@ repository code was changed by this review.
 | Input validation | Pass | `prehashed=true` is mandatory; standard base64 decoding and exactly 32 decoded bytes are required before signing. [path_sign.go](../path_sign.go:45) |
 | EVM signature conversion | Pass | dcrd compact `v||r||s` is converted to `r||s||v`; only recovery codes 27/28 are accepted. [path_sign.go](../path_sign.go:106) |
 | EVM interoperability | Pass | Known-answer, recovery, address, deterministic RFC6979, and low-S tests pass. [evm_vectors_test.go](../evm_vectors_test.go:34) |
-| No-export surface | Pass, caveat below | No export/backup/restore route exists; live OpenBao 2.6.1 `export/bounty` returned 404. Key reads and signing expose public material only. [backend.go](../backend.go:41) |
+| No-export surface | Pass, caveat below | No export/backup/restore route exists; live OpenBao 2.6.1 `export/test-key` returned 404. Key reads and signing expose public material only. [backend.go](../backend.go:41) |
 | Seal-wrap declaration | Pass | `keys/` is prefix-scoped under `SealWrapStorage`. [backend.go](../backend.go:46) |
 | Audit architecture | Pass by inspection | The plugin uses normal framework paths and does not opt out of OpenBao core audit brokerage. Runtime evidence remains required; see SEC-004. |
 | Handler logging/response hygiene | Pass by inspection | Handlers do not log or return `PrivateKey`; errors reveal names, lengths, recovery codes, or decode errors only. [key.go](../key.go:66), [path_sign.go](../path_sign.go:45) |
@@ -166,9 +166,9 @@ upgrade.
 2. Add and pass the OpenBao 2.6.1 integration coverage required by SEC-004.
 3. Repeat this checklist against the exact release binary, OpenBao version,
    Go patch version, and `go.sum`.
-4. Keep deployment limited to DOM-B, grant the workload only `update` on
-   `sign/bounty`, configure audit devices declaratively, and prohibit core
-   dumps and swap exposure.
+4. Restrict deployment to a dedicated security domain, grant the signing
+   workload only `update` on its `sign/<name>` path, configure audit devices
+   declaratively, and prohibit core dumps and swap exposure.
 
 ## Verification record
 
@@ -180,5 +180,5 @@ upgrade.
 | `go mod verify` | Pass |
 | `govulncheck ./...` | Fail: 25 reachable vulnerabilities (SEC-001) |
 | OpenBao 2.6.1 register/mount/create/sign/read | Pass |
-| Live `secp256k1/export/bounty` probe | Pass: unsupported path |
+| Live `secp256k1/export/test-key` probe | Pass: unsupported path |
 | Actual audit-device/capable-seal assertion | Not demonstrated (SEC-004) |

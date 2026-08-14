@@ -11,7 +11,7 @@
 #      or in unwrapped storage output;
 #   3. the mount is tuned with seal_wrap=true (the storage-level seal-wrap
 #      assertion needs a capable seal, which dev mode's shamir seal is not —
-#      that residual check belongs to the DOM-B deployment checks);
+#      that residual check belongs to the production deployment checks);
 #   4. export/backup/restore probes all fail as unsupported paths.
 #
 # Requires: bao (OpenBao, target 2.6.1) and jq on PATH. Exits non-zero on the
@@ -76,17 +76,17 @@ SW="$("$BAO_BIN" read -format=json sys/mounts | jq -r '.data["secp256k1/"].seal_
 [ "$SW" = "true" ] && pass "sys/mounts reports seal_wrap=true" || fail "seal_wrap is '$SW'"
 
 echo "== create key, sign =="
-"$BAO_BIN" write -format=json -force secp256k1/keys/bounty >"$WORK/create.json"
+"$BAO_BIN" write -format=json -force secp256k1/keys/test-key >"$WORK/create.json"
 # Exactly 32 ASCII bytes, deterministic across runs and platforms.
-DIGEST_B64="$(printf 'independent-impact-sec004-test!!' | base64)"
-"$BAO_BIN" write -format=json secp256k1/sign/bounty input="$DIGEST_B64" prehashed=true >"$WORK/sign.json"
+DIGEST_B64="$(printf 'openbao-secp256k1-sec004-test!!!' | base64)"
+"$BAO_BIN" write -format=json secp256k1/sign/test-key input="$DIGEST_B64" prehashed=true >"$WORK/sign.json"
 SIG="$(jq -r '.data.signature' "$WORK/sign.json")"
 [ "${#SIG}" = "132" ] && pass "signature returned (65 bytes hex)" || fail "unexpected signature: $SIG"
 
 echo "== assertion 1: request+response audit events for the sign op =="
 grep -q '"type":"request"' "$AUDIT_LOG" || fail "no request audit events"
-REQ="$(jq -c 'select(.type=="request" and .request.path=="secp256k1/sign/bounty")' "$AUDIT_LOG" | tail -1)"
-RESP="$(jq -c 'select(.type=="response" and .request.path=="secp256k1/sign/bounty")' "$AUDIT_LOG" | tail -1)"
+REQ="$(jq -c 'select(.type=="request" and .request.path=="secp256k1/sign/test-key")' "$AUDIT_LOG" | tail -1)"
+RESP="$(jq -c 'select(.type=="response" and .request.path=="secp256k1/sign/test-key")' "$AUDIT_LOG" | tail -1)"
 [ -n "$REQ" ] && pass "sign request audited" || fail "sign request not audited"
 [ -n "$RESP" ] && pass "sign response audited" || fail "sign response not audited"
 echo "$REQ" | jq -e '.request.data.input | startswith("hmac-sha256:")' >/dev/null \
@@ -102,12 +102,12 @@ if grep -q 'private_key' "$AUDIT_LOG" "$WORK/create.json" "$WORK/sign.json"; the
   fail "the string 'private_key' appears in audit log or responses"
 fi
 pass "no private_key field in audit log or responses"
-KEYREAD="$("$BAO_BIN" read -format=json secp256k1/keys/bounty)"
+KEYREAD="$("$BAO_BIN" read -format=json secp256k1/keys/test-key)"
 echo "$KEYREAD" | jq -e '.data | keys == ["deletion_allowed","latest_version","name","type","versions"]' >/dev/null \
   && pass "key read exposes only public fields" || fail "unexpected key-read fields: $KEYREAD"
 
 echo "== assertion 4: negative probes =="
-for p in export/bounty backup/bounty restore/bounty; do
+for p in export/test-key backup/test-key restore/test-key; do
   if "$BAO_BIN" read "secp256k1/$p" >/dev/null 2>&1 || "$BAO_BIN" write -force "secp256k1/$p" >/dev/null 2>&1; then
     fail "probe secp256k1/$p unexpectedly succeeded"
   fi

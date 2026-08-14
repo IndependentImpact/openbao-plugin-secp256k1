@@ -4,8 +4,7 @@
 // holds non-exportable secp256k1 keys and produces EVM-verifiable
 // (ecrecover-compatible) ECDSA signatures over caller-supplied 32-byte
 // digests. It exists because stock OpenBao transit offers no secp256k1 key
-// type (openbao/openbao#2618, wontfix) and is deployed only in the dedicated
-// security domain DOM-B per II's ADR-0018 and TS-0016.
+// type (openbao/openbao#2618, wontfix).
 package secp256k1signer
 
 import (

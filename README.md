@@ -2,7 +2,7 @@
 
 An OpenBao secrets-engine plugin that holds **non-exportable secp256k1 keys** and signs caller-supplied **32-byte digests**, returning 65-byte `r||s||v` signatures verifiable by the EVM `ecrecover` precompile.
 
-It exists because stock OpenBao transit has no secp256k1 key type and will not accept one ([openbao/openbao#2618](https://github.com/openbao/openbao/issues/2618), closed wontfix). Independent Impact uses it to serve the platform-wide **bounty attestation key** (role `bounty`) in the dedicated security domain **`DOM-B`**, per [ADR-0018](https://github.com/IndependentImpact/ii-backend/blob/develop/docs/adrs/adr-0018-secrets-management.md) and [TS-0016](https://github.com/IndependentImpact/ii-backend/blob/develop/docs/tech-specs/ts-0016-key-custody-and-signing.md). This is a **prototyping-stage arrangement**, to be revisited at MVE.
+It exists because stock OpenBao transit has no secp256k1 key type and will not accept one ([openbao/openbao#2618](https://github.com/openbao/openbao/issues/2618), closed wontfix).
 
 ## Security properties
 
@@ -12,14 +12,14 @@ It exists because stock OpenBao transit has no secp256k1 key type and will not a
 - **Seal-wrapped storage.** Key material under `keys/` is declared for seal wrapping (extra encryption under a capable seal).
 - **Gated deletion.** `deletion_allowed` defaults to false, set per key via `keys/<name>/config`.
 - **Fail-closed scalar validation.** Stored scalars are validated against `[1, N-1]` before any use; a corrupted zero or out-of-range value is rejected rather than silently reduced to a different key (SEC-003).
-- **Best-effort memory hygiene, honestly bounded.** All plugin-owned copies of private scalars — decoded storage entries, serialized storage buffers, dcrd key objects — are overwritten on every return path (SEC-002). What this cannot cover: Go's GC may have already moved or copied a buffer, and the gRPC/TLS transport to the OpenBao core keeps its own serialization buffers. Those copies are unreachable from plugin code, so process-level controls are part of the security boundary: **disable core dumps and swap on DOM-B hosts** (the OpenBao process should also run with `disable_mlock=false`).
+- **Best-effort memory hygiene, honestly bounded.** All plugin-owned copies of private scalars — decoded storage entries, serialized storage buffers, dcrd key objects — are overwritten on every return path (SEC-002). What this cannot cover: Go's GC may have already moved or copied a buffer, and the gRPC/TLS transport to the OpenBao core keeps its own serialization buffers. Those copies are unreachable from plugin code, so process-level controls are part of the security boundary: **disable core dumps and swap on hosts running OpenBao** (the OpenBao process should also run with `disable_mlock=false`).
 
 ## Verification
 
 - `make test` — unit tests (race detector), including no-export scans of full serialized responses and fail-closed corruption tests.
 - `make vulncheck` — `govulncheck` must report **zero reachable vulnerabilities**; this is a CI release gate (SEC-001).
 - `make integration` — `scripts/integration-openbao.sh` runs the built plugin inside a disposable OpenBao server (target 2.6.1) and asserts live behaviour the unit harness cannot: request/response **audit events** for a sign operation with the digest input HMAC'd, no private material in the audit log or any response, the mount tuned `seal_wrap=true`, and export/backup/restore probes rejected (SEC-004). Runs in CI on every push/PR.
-- **Capable-seal residual**: dev mode's shamir seal cannot demonstrate actual seal wrapping of stored entries; asserting the stored `keys/` item is seal-wrapped belongs to the DOM-B deployment checks, alongside the `ii-secrets-check` assertions in ii-backend.
+- **Capable-seal residual**: dev mode's shamir seal cannot demonstrate actual seal wrapping of stored entries; asserting the stored `keys/` item is seal-wrapped belongs to the deployment environment's own checks.
 
 ## API
 
@@ -33,7 +33,7 @@ It exists because stock OpenBao transit has no secp256k1 key type and will not a
 | `keys/` | `LIST` | Key names |
 | `sign/<name>` | `POST` | `input` (base64 32-byte digest), `prehashed=true`, optional `key_version` (0 = latest) |
 
-`sign` response: `signature` (0x-hex, 65-byte `r||s||v`, v = 27/28), `key_version`, `public_key_compressed`, `public_key_uncompressed`, `evm_address` — the public key is returned on every signature so callers can enforce a registry match (TS-0016).
+`sign` response: `signature` (0x-hex, 65-byte `r||s||v`, v = 27/28), `key_version`, `public_key_compressed`, `public_key_uncompressed`, `evm_address` — the public key is returned on every signature so callers can enforce a registry match.
 
 ## Build
 
@@ -51,8 +51,8 @@ plugin_directory = "/opt/openbao/plugins"
 ```sh
 bao plugin register -sha256=$(sha256sum openbao-plugin-secp256k1 | cut -d' ' -f1) -version=v0.1.0 secret secp256k1
 bao secrets enable -path=secp256k1 secp256k1
-bao write secp256k1/keys/bounty
-bao write secp256k1/sign/bounty input=$(echo -n "<32-byte-digest>" | base64) prehashed=true
+bao write secp256k1/keys/my-key
+bao write secp256k1/sign/my-key input=$(echo -n "<32-byte-digest>" | base64) prehashed=true
 ```
 
 Dev-mode smoke test:
@@ -61,11 +61,10 @@ Dev-mode smoke test:
 bao server -dev -dev-plugin-dir=$(pwd)
 ```
 
-## Deployment constraints (II-specific)
+## Deployment recommendations
 
-- Deploy **only** on the `DOM-B` cluster. The plugin must not be loaded into any other security domain (TS-0016).
-- Only the bounty handler receives a `DOM-B` credential; its policy grants `update` on `sign/bounty` and nothing else.
-- Deployment assertions (TS-0016 acceptance criterion 8): enumerate mounted paths and assert no export/backup endpoints; the check in `TestNoPrivateMaterialExposed` is the reference implementation.
+- Run the plugin in a dedicated OpenBao instance or security domain; grant the signing workload a least-privilege policy with only `update` on its `sign/<name>` path.
+- Deployment assertions: enumerate mounted paths and assert no export/backup endpoints; the check in `TestNoPrivateMaterialExposed` is the reference implementation.
 - Before upgrading the pinned OpenBao release, re-check whether native secp256k1 has landed upstream; if it has, retire this plugin.
 
 ## License

@@ -91,10 +91,10 @@ func testDigest(seed byte) []byte {
 
 func TestSignRoundTrip(t *testing.T) {
 	b, s := getTestBackend(t)
-	mustCreateKey(t, b, s, "bounty")
+	mustCreateKey(t, b, s, "test-key")
 
 	digest := testDigest(0xAB)
-	resp := signDigest(t, b, s, "bounty", digest, nil)
+	resp := signDigest(t, b, s, "test-key", digest, nil)
 	sig := decodeSig(t, resp)
 
 	v := sig[64]
