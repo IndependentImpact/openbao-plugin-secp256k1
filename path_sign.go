@@ -70,6 +70,7 @@ func (b *backend) handleSign(ctx context.Context, req *logical.Request, d *frame
 	if entry == nil {
 		return logical.ErrorResponse("key %q not found", name), nil
 	}
+	defer entry.wipe()
 
 	version := d.Get("key_version").(int)
 	if version == 0 {
@@ -79,11 +80,10 @@ func (b *backend) handleSign(ctx context.Context, req *logical.Request, d *frame
 	if !ok {
 		return logical.ErrorResponse("key %q has no version %d", name, version), nil
 	}
-	if len(kv.PrivateKey) != 32 {
-		return nil, fmt.Errorf("stored private key has invalid length %d", len(kv.PrivateKey))
+	priv, err := privKeyFromStored(kv.PrivateKey)
+	if err != nil {
+		return nil, err
 	}
-
-	priv := secp256k1.PrivKeyFromBytes(kv.PrivateKey)
 	defer priv.Zero()
 
 	sig, err := evmSign(priv, digest)

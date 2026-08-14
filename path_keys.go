@@ -71,11 +71,17 @@ func (b *backend) pathKeysRotate() *framework.Path {
 }
 
 func (b *backend) keyExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	entry, err := b.getKey(ctx, req.Storage, d.Get("name").(string))
+	// Existence needs no decoded private material (SEC-002): fetch the raw
+	// entry, wipe the buffer, answer from presence alone.
+	raw, err := req.Storage.Get(ctx, keyStoragePrefix+d.Get("name").(string))
 	if err != nil {
 		return false, err
 	}
-	return entry != nil, nil
+	if raw == nil {
+		return false, nil
+	}
+	wipeBytes(raw.Value)
+	return true, nil
 }
 
 func (b *backend) handleKeysList(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
@@ -97,6 +103,7 @@ func (b *backend) handleKeyCreate(ctx context.Context, req *logical.Request, d *
 		return nil, err
 	}
 	if existing != nil {
+		existing.wipe()
 		return logical.ErrorResponse("key %q already exists; use keys/%s/rotate to rotate it", name, name), nil
 	}
 
@@ -108,6 +115,7 @@ func (b *backend) handleKeyCreate(ctx context.Context, req *logical.Request, d *
 		Versions:      map[int]*keyVersion{1: kv},
 		LatestVersion: 1,
 	}
+	defer entry.wipe()
 	if err := b.putKey(ctx, req.Storage, name, entry); err != nil {
 		return nil, err
 	}
@@ -128,6 +136,7 @@ func (b *backend) handleKeyRead(ctx context.Context, req *logical.Request, d *fr
 	if entry == nil {
 		return nil, nil
 	}
+	defer entry.wipe()
 	return b.keyReadResponse(name, entry)
 }
 
@@ -164,6 +173,7 @@ func (b *backend) handleKeyConfig(ctx context.Context, req *logical.Request, d *
 	if entry == nil {
 		return logical.ErrorResponse("key %q not found", name), nil
 	}
+	defer entry.wipe()
 	entry.DeletionAllowed = d.Get("deletion_allowed").(bool)
 	if err := b.putKey(ctx, req.Storage, name, entry); err != nil {
 		return nil, err
@@ -184,6 +194,7 @@ func (b *backend) handleKeyRotate(ctx context.Context, req *logical.Request, d *
 	if entry == nil {
 		return logical.ErrorResponse("key %q not found", name), nil
 	}
+	defer entry.wipe()
 	kv, err := newKeyVersion()
 	if err != nil {
 		return nil, err
@@ -209,6 +220,7 @@ func (b *backend) handleKeyDelete(ctx context.Context, req *logical.Request, d *
 	if entry == nil {
 		return nil, nil
 	}
+	defer entry.wipe()
 	if !entry.DeletionAllowed {
 		return logical.ErrorResponse("deletion of key %q is not allowed; set deletion_allowed via keys/%s/config first", name, name), nil
 	}
