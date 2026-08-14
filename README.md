@@ -12,14 +12,14 @@ It exists because stock OpenBao transit has no secp256k1 key type and will not a
 - **Seal-wrapped storage.** Key material under `keys/` is declared for seal wrapping (extra encryption under a capable seal).
 - **Gated deletion.** `deletion_allowed` defaults to false, set per key via `keys/<name>/config`.
 - **Fail-closed scalar validation.** Stored scalars are validated against `[1, N-1]` before any use; a corrupted zero or out-of-range value is rejected rather than silently reduced to a different key (SEC-003).
-- **Best-effort memory hygiene, honestly bounded.** All plugin-owned copies of private scalars — decoded storage entries, serialized storage buffers, dcrd key objects — are overwritten on every return path (SEC-002). What this cannot cover: Go's GC may have already moved or copied a buffer, and the gRPC/TLS transport to the OpenBao core keeps its own serialization buffers. Those copies are unreachable from plugin code, so process-level controls are part of the security boundary: **disable core dumps and swap on hosts running OpenBao** (the OpenBao process should also run with `disable_mlock=false`).
+- **Best-effort memory hygiene, honestly bounded.** All plugin-owned copies of private scalars — decoded storage entries, serialized storage buffers, dcrd key objects — are overwritten on every return path (SEC-002). What this cannot cover: Go's GC may have already moved or copied a buffer, and the gRPC/TLS transport to the OpenBao core keeps its own serialization buffers. Those copies are unreachable from plugin code, so process-level controls are part of the security boundary: **users of this plugin should disable core dumps and swap on their OpenBao hosts** (the OpenBao process should also run with `disable_mlock=false`).
 
 ## Verification
 
 - `make test` — unit tests (race detector), including no-export scans of full serialized responses and fail-closed corruption tests.
 - `make vulncheck` — `govulncheck` must report **zero reachable vulnerabilities**; this is a CI release gate (SEC-001).
 - `make integration` — `scripts/integration-openbao.sh` runs the built plugin inside a disposable OpenBao server (target 2.6.1) and asserts live behaviour the unit harness cannot: request/response **audit events** for a sign operation with the digest input HMAC'd, no private material in the audit log or any response, the mount tuned `seal_wrap=true`, and export/backup/restore probes rejected (SEC-004). Runs in CI on every push/PR.
-- **Capable-seal residual**: dev mode's shamir seal cannot demonstrate actual seal wrapping of stored entries; asserting the stored `keys/` item is seal-wrapped belongs to the deployment environment's own checks.
+- **Capable-seal residual**: dev mode's shamir seal cannot demonstrate actual seal wrapping of stored entries; asserting the stored `keys/` item is seal-wrapped belongs to developers' own deployment checks.
 
 ## API
 
@@ -51,8 +51,8 @@ plugin_directory = "/opt/openbao/plugins"
 ```sh
 bao plugin register -sha256=$(sha256sum openbao-plugin-secp256k1 | cut -d' ' -f1) -version=v0.1.0 secret secp256k1
 bao secrets enable -path=secp256k1 secp256k1
-bao write secp256k1/keys/my-key
-bao write secp256k1/sign/my-key input=$(echo -n "<32-byte-digest>" | base64) prehashed=true
+bao write secp256k1/keys/myKey
+bao write secp256k1/sign/myKey input=$(echo -n "<32-byte-digest>" | base64) prehashed=true
 ```
 
 Dev-mode smoke test:
